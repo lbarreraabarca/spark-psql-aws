@@ -1,0 +1,20 @@
+entityName: test_entity
+countryCode: ar
+requiredTables:
+  - tableId: cl_entities__table_a
+    coreUrl: cl/cl_entities/table_a/data/<process_date>/*.avro
+    hostBucket: my-other-bucket
+    partitionDelay: 1
+  - tableId: schemay__table_b
+    coreUrl: /orcl/pe/db/schemay/table_b/data/<process_date>/*.avro
+    partitionsDays: 180
+  - tableId: schemaz__table_c
+    coreUrl: orcl/co/db/schemaz/table_c/data/<process_date>/*.avro
+    loadType: ALL_DATA
+sqlQuery:
+  SELECT ta.word, SUM(ta.number) suma
+  FROM cl_entities__table_a ta
+  JOIN schemay__table_b tb ON ta.number = tb.number
+  JOIN schemaz__table_c tc ON ta.number = tc.number
+  GROUP BY ta.word
+...
