@@ -1,9 +1,9 @@
 package com.analytic.entities
 
-import com.analytic.entities.adapters.{BigQueryOperator, GoogleCloudStorageOperator, SparkDataOperator, SparkSQLOperator, TableRepository, YAMLOperator}
+import com.analytic.entities.adapters.{GoogleCloudStorageOperator, SparkDataOperator, SparkSQLOperator, YAMLOperator}
 import com.analytic.entities.exceptions.ControllerException
 import com.analytic.entities.models.{EntityRequest, EntityRequestBuilder, InputEntityRequest, Response, Spark}
-import com.analytic.entities.ports.{DataIOOperator, SQLOperator, TBigQueryOperator, TTableRepository, TYAMLOperator}
+import com.analytic.entities.ports.{DataIOOperator, SQLOperator, TYAMLOperator}
 import com.analytic.entities.services.EntityGeneratorService
 import com.typesafe.scalalogging.Logger
 
@@ -46,11 +46,11 @@ object App extends Spark {
       val request: EntityRequest = makeRequestCore(entityDetails, processDate, srcBkt, outputBkt)
       val sparkSqlOperator: SQLOperator = new SparkSQLOperator with Spark
       val avroOperator: DataIOOperator = new SparkDataOperator with Spark with GoogleCloudStorageOperator
-      val bigQueryOperator: TBigQueryOperator = new BigQueryOperator
-      val tablesRepository: TTableRepository = new TableRepository with GoogleCloudStorageOperator
-      val mainService = new EntityGeneratorService(avroOperator, sparkSqlOperator, bigQueryOperator, tablesRepository)
-      val response: Response = mainService.invoke(request)
-      validateResponse(response)
+      //val bigQueryOperator: TBigQueryOperator = new BigQueryOperator
+      //val tablesRepository: TTableRepository = new TableRepository with GoogleCloudStorageOperator
+      //val mainService = new EntityGeneratorService(avroOperator, sparkSqlOperator, bigQueryOperator, tablesRepository)
+      //val response: Response = mainService.invoke(request)
+      //validateResponse(response)
       log.info("Application finished correctly")
       sparkSession.stop()
     } catch {

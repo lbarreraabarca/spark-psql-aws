@@ -6,10 +6,10 @@ import org.scalamock.scalatest.MockFactory
 import java.time.LocalDate
 
 import com.analytic.entities.SharedTestSpark
-import com.analytic.entities.adapters.{BigQueryOperator, GoogleCloudStorageOperator, SparkDataOperator, SparkSQLOperator, TableRepository}
+import com.analytic.entities.adapters.{GoogleCloudStorageOperator, SparkDataOperator, SparkSQLOperator}
 import com.analytic.entities.exceptions.RepositoryException
-import com.analytic.entities.models.{EntityRequest, EntityRequestBuilder, InputEntityRequest, InputTableSpec, ResponseFailure, ResponseSuccess, ResponseType, TableLoadType, TablePartition, TableReference}
-import com.analytic.entities.ports.{DataIOOperator, SQLOperator, TBigQueryOperator, TTableRepository}
+import com.analytic.entities.models.{EntityRequest, EntityRequestBuilder, InputEntityRequest, InputTableSpec, ResponseFailure, ResponseSuccess, ResponseType, TableLoadType, TableReference}
+import com.analytic.entities.ports.{DataIOOperator, SQLOperator}
 import org.apache.spark.sql.DataFrame
 
 class EntityGeneratorServiceTest extends AnyFlatSpec with MockFactory with PrivateMethodTester with SharedTestSpark {

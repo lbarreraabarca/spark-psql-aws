@@ -1,13 +1,15 @@
 package com.analytic.entities.models
 
 import java.time.LocalDate
+import CountryCode.CountryCode
 
 case class EntityRequest(
-  entityTable: TablePartition,
-  bqDataset: String,
+  entityName: String,
+  countryCode: CountryCode,
   processDate: LocalDate,
   requiredTables: List[TableReference],
   sqlQuery: String,
   errorList: List[String],
-  bqOptions: Map[String, String] = Map.empty[String, String],
+  //TODO: WRITE PGSQL
+  //TODO: WRITE AWS
 )

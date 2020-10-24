@@ -5,8 +5,5 @@ import java.time.LocalDate
 import org.apache.spark.sql.DataFrame
 
 trait DataIOOperator {
-  def readCsv(paths: String, schemaUrl: String, sep: String): DataFrame
-  def readAvro(paths: String): DataFrame
-  def readBigQuery(table: String, partitionCol: String, dateRange: (LocalDate, LocalDate)): DataFrame
-  def saveAvro(path: String, df: DataFrame): Boolean
+  def readPgSql(tableId: String, dbHost: String, dbPort: String, dbName: String, dbUsername: String, dbPassword: String, querySource: String): DataFrame
 }

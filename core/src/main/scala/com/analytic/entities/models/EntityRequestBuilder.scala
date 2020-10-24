@@ -2,9 +2,10 @@ package com.analytic.entities.models
 
 import scala.util.Try
 import java.time.LocalDate
-import scala.util.matching.Regex
+
 import scala.collection.mutable.ListBuffer
 import com.analytic.entities.utils.CoreUtils._
+import com.analytic.entities.models.DataBaseType.DataBaseType
 
 case class EntityRequestBuilder (
   inputRequestFile: InputEntityRequest,
@@ -36,9 +37,6 @@ case class EntityRequestBuilder (
   protected val (countryCode, isValidCountryCode) = transformField(inputRequestFile.countryCode, countryCodeTransformer, CountryCode.NONE)
   protected val (requiredTables, isValidRequiredTables) = validateField(inputRequestFile.requiredTables, requiredTablesValidator, Nil)
   protected val (sqlQuery, isValidQuery) = transformField(inputRequestFile.sqlQuery, queryTransformer, "_")
-  protected val (storageUrl, isValidStorageUrl) = transformField(inputRequestFile.storageUrl, storageUrlTransformer, DefaultStorageUrl)
-  protected val (bqDataSet, isValidBqDataset) = validateField(inputRequestFile.bqDataset, fieldValidator, DefaultBqDataSet)
-  protected val (bqOptions, isValidBqOptions) = validateField(inputRequestFile.bqOptions, bigQueryOptionsValidator, Map.empty[String, String])
 
   if (!isValidDate) addError(s"invalid processDate [${_processDate}]")
   if (!isValidSourceBucket) addError(s"invalid sourceBucket [${_sourceBucket}]")
@@ -47,21 +45,16 @@ case class EntityRequestBuilder (
   if (!isValidCountryCode) addError(s"invalid countryCode [${inputRequestFile.countryCode}]")
   if (!isValidRequiredTables) addError(s"invalid requiredTables [${inputRequestFile.requiredTables}]")
   if (!isValidQuery) addError(s"invalid sqlQuery [${inputRequestFile.sqlQuery}]")
-  if (!isValidStorageUrl) addError(s"invalid storageUrl [${inputRequestFile.storageUrl.getOrElse("")}]")
-  if (!isValidBqDataset) addError(s"invalid bqDataset [${inputRequestFile.bqDataset.getOrElse("")}]")
-  if (!isValidBqOptions) addError(s"invalid bqOptions [${inputRequestFile.bqDataset.getOrElse("")}]")
 
-  protected lazy val entityTable: TablePartition = TablePartition(entityName, storageUrl, outputBucket)
   protected lazy val requiredTablesReferences: List[TableReference] = requiredTables.flatMap(toTableReference(_))
 
   lazy val entityRequest: EntityRequest = EntityRequest(
-    entityTable,
-    bqDataSet,
+    entityName,
+    countryCode,
     processDate,
     requiredTablesReferences,
     sqlQuery,
     errorList.toList,
-    bqOptions
   )
 
   protected def addError(message: String): Unit = errorList += s"RequestException: $message"
@@ -69,34 +62,24 @@ case class EntityRequestBuilder (
   protected def fieldValidator: String => Boolean = f => ("""[^-$`_a-z0-9]""".r findFirstMatchIn f).isEmpty
   protected def tableIdValidator: String => String => Boolean = query => t => fieldValidator(t.toLowerCase) &&
     (("""(?<=\s|^)(?i)""" + t.toLowerCase + """(?=\s|\)|$)""").r findFirstMatchIn query.toLowerCase).isDefined
-  protected def gcsUrlValidator: String => Boolean = url => ("""^gs://[-._/a-z0-9]+$""".r findFirstMatchIn url).isDefined
   protected def requiredTablesValidator: List[_] => Boolean = t => t.nonEmpty && !t.contains(null)
-  protected def partitionsDaysValidator: Int => Boolean = _ > 0
-  protected def partitionDelayValidator: Int => Boolean = _ >= 0
 
   protected def bigQueryOptionsValidator: Map[String, String] => Boolean = bqOptions =>
     if (bqOptions.contains("clusterBy")) bqOptions("clusterBy").split(",").nonEmpty else true
 
-  protected def urlRgxTransformer: String => Regex = x => if (x.contains("/*.")) {
-    ("^(" + x.toLowerCase.stripPrefix("/")
-      .replace("/*.", """)/*.""")
-      .replace(".", """\.""")
-      .replace("/*", """/[-._a-z0-9]+""")
-      .replace("/<process_date>", """/\d{4}/\d{2}/\d{2}""")
-      + "$"
-      ).r
-  } else throw new IllegalArgumentException("invalid url")
-
-  protected def urlStemTransformer: String => String = x => {
-    val u = x.stripPrefix("/").toLowerCase
-    """/[<*]""".r findFirstIn u match {
-      case Some(m) => u take u.indexOfSlice(m)
-      case None => throw new IllegalArgumentException("unable to find stem in url")
+  protected def dbHostValidator: String => Boolean = x => {
+    val regexDbHost = """^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$""".r
+    x match {
+      case regexDbHost(_*) => true
+      case _ => throw new IllegalArgumentException("dbHost do not match with regexHost.")
     }
   }
-  protected def urlFileFormatTransformer: Seq[String] => String => String = (validFormats: Seq[String]) => u => {
-    val format = u.split("""\.""").last.toLowerCase
-    if (validFormats contains format) format else throw new IllegalArgumentException("invalid file format")
+  protected def dbPortValidator: String => Boolean = x => {
+    val regexDbPort = """^[0-9]{1,3}$""".r
+    x match {
+      case regexDbPort(_*) => true
+      case _ => throw new IllegalArgumentException("dbPort do not match with regexDbPort.")
+    }
   }
   protected def queryTransformer(implicit pDate: LocalDate): String => String =  query => {
     if (query.nonEmpty) query.replace("<process_date>", pDate.toString)
@@ -104,7 +87,7 @@ case class EntityRequestBuilder (
   }
   protected def processDateTransformer: String => LocalDate = extractDate
   protected def countryCodeTransformer: String => CountryCode = c => CountryCode.withName(c.toUpperCase)
-  protected def loadTypeTransformer: String => TableLoadType = l => TableLoadType.withName(l.toUpperCase)
+  protected def rdbmsTransformer: String => DataBaseType = l => DataBaseType.withName(l.toUpperCase)
   protected def storageUrlTransformer(implicit pDate: LocalDate): String => String = u =>
     if (("""[^-./_a-z0-9]""".r findFirstMatchIn u.toLowerCase).isEmpty)
       u.toLowerCase.stripPrefix("/").stripSuffix("/") + "/" + pDate.toString.replace("-", "/")
@@ -116,36 +99,33 @@ case class EntityRequestBuilder (
 
   protected def toTableReference(t: InputTableSpec)(implicit pDate: LocalDate): Option[TableReference] = {
     val (tableId, isValidTableId) = validateField(t.tableId, tableIdValidator(sqlQuery), "_")
-    val (rgxUrl, isValidUrlA) = transformField(t.coreUrl, urlRgxTransformer, "_".r)
-    val (stemUrl, isValidUrlB) = transformField(t.coreUrl, urlStemTransformer, "_")
-    val (fileFormat, isValidUrlC) = transformField(t.coreUrl, urlFileFormatTransformer(ValidFileFormats), "_")
-    val (hostBkt, isValidHostBucket) = validateField(t.hostBucket, fieldValidator, DefaultHostBucket)
-    val (loadType, isValidLoadType) = transformField(t.loadType, loadTypeTransformer, DefaultLoadType)
-    val (schemaFile, isValidSchemaFileUrl) = validateField(t.schemaFile, gcsUrlValidator, "_")
-    val (partitionsDays, isValidPartitionDays) = validateField(t.partitionsDays, partitionsDaysValidator, DefaultPartitionsDays)
-    val (partitionDelay, isValidPartitionDelay) = validateField(t.partitionDelay, partitionDelayValidator, DefaultPartitionDelay)
+    val (rdms, isValidRdbms) = transformField(t.rdms, rdbmsTransformer, DataBaseType.NONE)
+    val (dbHost, isValidDbHost) = validateField(t.dbHost, dbHostValidator, "_")
+    val (dbPort, isValidDbPort) = validateField(t.dbPort, dbPortValidator, "_")
+    val (dbName, isValidDbName) = validateField(t.dbName, fieldValidator, "_")
+    val (dbUsername, isValidDbUsername) = validateField(t.dbUsername, fieldValidator, "_")
+    val (dbPassword, isValidDbPassword) = validateField(t.dbPassword, fieldValidator, "_")
+    val (querySource, isValidQuerySource) = validateField(t.querySource, fieldValidator, "_") //TODO
 
     if (!isValidTableId) { addError(s"tableId invalid or not found in query [${t.tableId}]") }
-    if (!isValidUrlA || !isValidUrlB || !isValidUrlC) { addError(s"invalid table coreUrl for tableId '${t.tableId}' [${t.coreUrl}]") }
-    if (SchemaRequiredFormats.contains(fileFormat) && (schemaFile == "_" || !isValidSchemaFileUrl)) {
-      addError(s"invalid schemaFile for $fileFormat file format for tableId '${t.tableId}' [${t.schemaFile.getOrElse("")}]")
-    }
-    if (!isValidHostBucket) { addError(s"invalid table hostBucket for tableId '${t.tableId}' [${t.hostBucket.getOrElse("")}]") }
-    if (!isValidLoadType) { addError(s"invalid table loadType for tableId '${t.tableId}' [${t.loadType.getOrElse("")}]") }
-    if (!isValidPartitionDays) { addError(s"invalid table partitionsDays for tableId '${t.tableId}' [${t.partitionsDays.getOrElse("")}]") }
-    if (!isValidPartitionDelay) { addError(s"invalid table partitionDelay for tableId '${t.tableId}' [${t.partitionDelay.getOrElse("")}]") }
+    if (!isValidRdbms) { addError(s"invalid rdms ${t.rdms}") }
+    if (!isValidDbHost) {addError(s"invalid dbHost ${t.dbHost}")}
+    if (!isValidDbPort) {addError(s"invalid dbPort ${t.dbPort}")}
+    if (!isValidDbName) {addError(s"invalid dbName ${t.dbName}")}
+    if (!isValidDbUsername) {addError(s"invalid dbUsername ${t.dbUsername}")}
+    if (!isValidDbPassword) {addError(s"invalid dbPassword ${t.dbPassword}")}
+    if (!isValidQuerySource) {addError(s"invalid querySource ${t.querySource}")}
+
     Try {
       TableReference(
         tableId = tableId,
-        regexUrl = rgxUrl,
-        stemUrl = stemUrl,
-        processDate = pDate,
-        hostBucket = hostBkt,
-        fileFormat = fileFormat,
-        schemaSource = if (schemaFile == "_") None else Some(schemaFile),
-        loadType = loadType,
-        partitionsDays = partitionsDays,
-        partitionDelay = partitionDelay
+        rdms = rdms,
+        dbHost = dbHost,
+        dbPort = dbPort,
+        dbName = dbName,
+        dbUsername = dbUsername,
+        dbPassword = dbPassword,
+        querySource = querySource,
       )
     }.toOption
   }
